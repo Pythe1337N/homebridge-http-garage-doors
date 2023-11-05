@@ -24,6 +24,7 @@
     "homebridge": ">=0.3.0"
   },
   "dependencies": {
+    "node-fetch": "^2.7.0",
     "request": "^2.88.2"
   },
   "devDependencies": {

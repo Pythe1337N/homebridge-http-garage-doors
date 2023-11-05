@@ -1,6 +1,6 @@
 'use strict';
 
-const http_request = require("request");
+const fetch = require('node-fetch');
 
 var Service, Characteristic;
 
@@ -103,24 +103,32 @@ class HttpGarageDoorsAccessory {
   }
 
   httpRequest(request, callback) {
-
-    var headers_object = {},
+    let headers_object = {},
         params_object = {},
         body, json = false,
-        query_params = [];
+        query_params = [],
+        url = request.url;
 
-    if (this.debug) this.log('Check for request params...');
-
-    if (request.params && request.params.length) {
+    if (this.debug) {
+      this.log('Check for request params...');
+    }
+    
+    if (typeof request.params === 'object') {
+      params_object = request.params;
+    } else if (request.params && request.params.length) {
       request.params.map(function(param){
         params_object[param.name] = param.value;
         query_params.push(encodeURIComponent(param.name) + "=" + encodeURIComponent(param.value));
       });
     }
 
-    if (this.debug) this.log('Check for request headers...');
+    if (this.debug) {
+      this.log('Check for request headers...');
+    }
 
-    if (request.headers && request.headers.length) {
+    if (typeof request.headers === 'object') {
+      headers_object = request.headers;
+    } else if (request.headers && request.headers.length) {
       request.headers.map(function(header){
         headers_object[header.name] = header.value;
       });
@@ -131,23 +139,25 @@ class HttpGarageDoorsAccessory {
       this.log(request.type);
     }
 
-    if (request.type && request.type.toUpperCase() == 'JSON') {
+    if (request.type && request.type.toUpperCase() === 'JSON') {
       json = true;
       body = params_object;
     } else {
       json = false;
 
-      if (request.method.toUpperCase() == 'GET') {
+      if (request.method.toUpperCase() === 'GET') {
         body = '';
-        if (query_params.length) url = url + (url.indexOf('?') < 0 ? '?' : '&') + query_params.join('&');
+        if (query_params.length) {
+          url = url + (url.indexOf('?') < 0 ? '?' : '&') + query_params.join('&');
+        }
       }
       
     }
 
     if (this.debug) this.log('Prepare httpRequest Config');
 
-    var config = {
-      url: request.url,
+    let config = {
+      url: url,
       json: json,
       body: body,
       method: request.method || 'GET',
@@ -159,21 +169,18 @@ class HttpGarageDoorsAccessory {
       this.log(config);
     }
     
-    http_request(config, (error, response, body) => {
-      if (this.debug) {
-        if (!error && response.statusCode == 200) {
-          this.log('Response Body');
-          this.log(body);
-        } else {
-          this.log('Request Error');
-          this.log(error);
-          this.log('Request Error Body');
-          this.log(body);
-        }
-      }
-      callback(error, response, body);
-    });
+    let options = {
+      method: request.method || 'GET',
+      headers: request.headers
+    };
+
+    if (json) {
+      options.headers = {...options.headers, 'Content-Type': 'application/json'};
+      options.body = JSON.stringify(body);
+    }
+    
+    fetch(url, options)
+        .then(() => callback())
+        .catch(() => callback());
   }
-
-
 }
