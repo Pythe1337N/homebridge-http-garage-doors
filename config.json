@@ -7,24 +7,26 @@
         "accessory": "HttpGarageDoors",
         "name": "Parking",
         
-        "closeAfter": 28,
-        "simulateTimeOpening": 13,
         "simulateTimeOpen": 15,
         "simulateTimeClosing": 12,
-        
-        "request": {
-            "headers": {
-                "Authorization": "Bearer KEY0123456789ABCDEF",
-            },
-            "url": "https://api.telnyx.com/v2/calls",
-            "method": "post",
-            "type": "json",
-            "params": {
-                "foo": "bar",
-                "bar": "foo",
-            },
+        "device": {
+            "manufacturer": "METATAG",
+            "model": "HTTP_GARAGE_GATES", 
+            "serialNumber": "00000001"
         },
-
+        "request": {
+            "url": "https://api.telnyx.com/v2/calls",
+            "options": {
+                "headers": {
+                    "Authorization": "Bearer KEY0123456789ABCDEF"
+                },
+                "method": "post",
+                "body": {
+                    "foo": "bar",
+                    "bar": "foo"
+                }
+            }
+        },
         "debug": false
     }]
 }

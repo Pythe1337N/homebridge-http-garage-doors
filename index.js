@@ -15,25 +15,41 @@ class HttpGarageDoorsAccessory {
   constructor (log, config) {
     this.log = log;
 
-    this.debug = config['debug'];
+    const {
+      debug,
+      request,
+      simulateTimeOpen,
+      simulateTimeClosing,
+      device = {}
+    } = config;
 
-    this.request = config['request'];
+    const {
+      manufacturer = 'METATAG',
+      model = 'HTTP_GARAGE_GATES',
+      serialNumber = '00000001'
+    } = device;
 
-    this.closeAfter = config['closeAfter'];
-    this.lastOpened = new Date();
+    this.debug = debug;
 
-    this.simulateTimeOpening = config['simulateTimeOpening'];
-    this.simulateTimeOpen = config['simulateTimeOpen'];
-    this.simulateTimeClosing = config['simulateTimeClosing'];
+    this.request = request;
+    
+    this.simulateTimeOpen = simulateTimeOpen;
+    this.simulateTimeClosing = simulateTimeClosing;
 
     this.service = new Service.GarageDoorOpener(config['name'], config['name']);
     this.setupGarageDoorOpenerService(this.service);
 
     this.informationService = new Service.AccessoryInformation();
     this.informationService
-      .setCharacteristic(Characteristic.Manufacturer, 'METATAG')
-      .setCharacteristic(Characteristic.Model, 'HTTP_GARAGE_GATES')
-      .setCharacteristic(Characteristic.SerialNumber, '00000001');
+        .setCharacteristic(Characteristic.Manufacturer, manufacturer)
+        .setCharacteristic(Characteristic.Model, model)
+        .setCharacteristic(Characteristic.SerialNumber, serialNumber);
+
+    this.targetDoorState = Characteristic.TargetDoorState.CLOSED;
+    this.currentDoorState = Characteristic.CurrentDoorState.CLOSED;
+    
+    this.closingTimer = undefined;
+    this.closedTimer = undefined;
   }
 
   getServices () {
@@ -41,146 +57,51 @@ class HttpGarageDoorsAccessory {
   }
 
   setupGarageDoorOpenerService (service) {
-    this.service.setCharacteristic(Characteristic.TargetDoorState, Characteristic.TargetDoorState.CLOSED);
-    this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.CLOSED);
+    this.service.setCharacteristic(Characteristic.TargetDoorState, this.targetDoorState);
+    this.service.setCharacteristic(Characteristic.CurrentDoorState, this.currentDoorState);
+
+    service.getCharacteristic(Characteristic.CurrentDoorState)
+        .on('get', (callback) => {
+          callback(null, this.currentDoorState)
+        })
 
     service.getCharacteristic(Characteristic.TargetDoorState)
-      .on('get', (callback) => {
-        var tds = service.getCharacteristic(Characteristic.TargetDoorState).value;
-        if (tds === Characteristic.TargetDoorState.OPEN &&
-          (((new Date()) - this.lastOpened) >= (this.closeAfter * 1000))) {
-          this.log('Setting TargetDoorState to CLOSED');
-          callback(null, Characteristic.TargetDoorState.CLOSED);
-        } else {
-          callback(null, tds);
-        }
-      })
-      .on('set', (value, callback) => {
-        if (value === Characteristic.TargetDoorState.OPEN) {
-          this.lastOpened = new Date();
-          switch (service.getCharacteristic(Characteristic.CurrentDoorState).value) {
-            case Characteristic.CurrentDoorState.CLOSED:
-            case Characteristic.CurrentDoorState.CLOSING:
-            case Characteristic.CurrentDoorState.OPEN:
-              this.openDoor(callback);
-              break;
-            default:
-              callback();
+        .on('get', (callback) => {
+          callback(null, this.targetDoorState);
+        })
+        .on('set', async (value, callback) => {
+          if (value === Characteristic.TargetDoorState.OPEN) {
+            this.targetDoorState = value;
+            this.lastOpened = Date.now();
+            await this.open();
           }
-        } else {
           callback();
-        }
-      });
+        });
   }
-
-  openDoor (callback) {
-    this.sendRequest(this.request, callback);
-  }
-
-  sendRequest (request, callback) {
-    this.httpRequest(request, (error, response, body) => {
-      this.simulateDoorOpening(callback);
-    });
-  }
-
-  simulateDoorOpening (callback) {
-    this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.OPENING);
-    this.log('Opening Door');
-    setTimeout(() => {
-      this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.OPEN);
-      this.log('Door open');
-      callback();
-      setTimeout(() => {
-        this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.CLOSING);
-        this.service.setCharacteristic(Characteristic.TargetDoorState, Characteristic.TargetDoorState.CLOSED);
-        this.log('Closing door');
-        setTimeout(() => {
-          this.service.setCharacteristic(Characteristic.CurrentDoorState, Characteristic.CurrentDoorState.CLOSED);
-          this.log('Door closed');
-        }, this.simulateTimeClosing * 1000);
-      }, this.simulateTimeOpen * 1000);
-    }, this.simulateTimeOpening * 1000);
-  }
-
-  httpRequest(request, callback) {
-    let headers_object = {},
-        params_object = {},
-        body, json = false,
-        query_params = [],
-        url = request.url;
-
-    if (this.debug) {
-      this.log('Check for request params...');
-    }
+  
+  async open() {
+    this.currentDoorState = Characteristic.CurrentDoorState.OPENING;
+    await this.fetchRequest(this.request);
+    this.currentDoorState = Characteristic.CurrentDoorState.OPEN;
     
-    if (typeof request.params === 'object') {
-      params_object = request.params;
-    } else if (request.params && request.params.length) {
-      request.params.map(function(param){
-        params_object[param.name] = param.value;
-        query_params.push(encodeURIComponent(param.name) + "=" + encodeURIComponent(param.value));
-      });
-    }
-
-    if (this.debug) {
-      this.log('Check for request headers...');
-    }
-
-    if (typeof request.headers === 'object') {
-      headers_object = request.headers;
-    } else if (request.headers && request.headers.length) {
-      request.headers.map(function(header){
-        headers_object[header.name] = header.value;
-      });
-    }
-
-    if (this.debug) {
-      this.log('Check for request type...');
-      this.log(request.type);
-    }
-
-    if (request.type && request.type.toUpperCase() === 'JSON') {
-      json = true;
-      body = params_object;
-    } else {
-      json = false;
-
-      if (request.method.toUpperCase() === 'GET') {
-        body = '';
-        if (query_params.length) {
-          url = url + (url.indexOf('?') < 0 ? '?' : '&') + query_params.join('&');
-        }
-      }
-      
-    }
-
-    if (this.debug) this.log('Prepare httpRequest Config');
-
-    let config = {
-      url: url,
-      json: json,
-      body: body,
-      method: request.method || 'GET',
-      headers: headers_object || {},
-    };
-
-    if (this.debug) {
-      this.log('httpRequest Config');
-      this.log(config);
-    }
+    clearTimeout(this.closingTimer);
+    clearTimeout(this.closedTimer);
     
-    let options = {
-      method: request.method || 'GET',
-      headers: request.headers
-    };
-
-    if (json) {
-      options.headers = {...options.headers, 'Content-Type': 'application/json'};
-      options.body = JSON.stringify(body);
-    }
+    this.closingTimer = setTimeout(() => {
+      this.currentDoorState = Characteristic.CurrentDoorState.CLOSING;
+    }, this.simulateTimeOpen * 1000);
     
-    fetch(url, options)
-        .then(() => callback())
-        .catch(() => callback());
+    this.closedTimer = setTimeout(() => {
+      this.currentDoorState = Characteristic.CurrentDoorState.CLOSED;
+    }, (this.simulateTimeOpen + this.simulateTimeClosing) * 1000);
   }
+
+  async fetchRequest(request) {
+    if (typeof request.options?.body === 'object') {
+      request.options.body = JSON.stringify(request.options.body);
+      request.headers = {...(request.headers || {}), 'Content-Type': 'application/json'};
+    }
+    await fetch(request.url, request.options);
+  }
+  
 }
