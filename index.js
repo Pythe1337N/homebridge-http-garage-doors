@@ -13,7 +13,7 @@ module.exports = function (homebridge) {
 
 class HttpGarageDoorsAccessory {
   constructor (log, config) {
-    this.log = log;
+    this.logger = log;
 
     const {
       debug,
@@ -47,6 +47,7 @@ class HttpGarageDoorsAccessory {
 
     this.targetDoorState = Characteristic.TargetDoorState.CLOSED;
     this.currentDoorState = Characteristic.CurrentDoorState.CLOSED;
+    this.obscrution = false;
     
     this.closingTimer = undefined;
     this.closedTimer = undefined;
@@ -55,10 +56,17 @@ class HttpGarageDoorsAccessory {
   getServices () {
     return [this.informationService, this.service];
   }
+  
+  log(str) {
+    if (this.debug) {
+      this.logger(str);
+    }
+  }
 
   setupGarageDoorOpenerService (service) {
     this.service.setCharacteristic(Characteristic.TargetDoorState, this.targetDoorState);
     this.service.setCharacteristic(Characteristic.CurrentDoorState, this.currentDoorState);
+    this.service.setCharacteristic(Characteristic.ObstructionDetected, this.obscrution);
 
     service.getCharacteristic(Characteristic.CurrentDoorState)
         .on('get', (callback) => {
@@ -72,36 +80,68 @@ class HttpGarageDoorsAccessory {
         .on('set', async (value, callback) => {
           if (value === Characteristic.TargetDoorState.OPEN) {
             this.targetDoorState = value;
-            this.lastOpened = Date.now();
             await this.open();
           }
           callback();
         });
   }
+
+  setCurrentDoorState(state) {
+    this.currentDoorState = state;
+    this.service.getCharacteristic(Characteristic.CurrentDoorState).updateValue(this.currentDoorState);
+  }
+
+  setTargetDoorState(state) {
+    this.targetDoorState = state;
+    this.service.getCharacteristic(Characteristic.TargetDoorState).updateValue(this.targetDoorState);
+  }
+  
+  setObstruction(state) {
+    this.obscrution = state;
+    this.service.getCharacteristic(Characteristic.ObstructionDetected).updateValue(this.obscrution);
+  }
   
   async open() {
-    this.currentDoorState = Characteristic.CurrentDoorState.OPENING;
-    await this.fetchRequest(this.request);
-    this.currentDoorState = Characteristic.CurrentDoorState.OPEN;
+    const states = Characteristic.CurrentDoorState;
+    this.setCurrentDoorState(states.OPENING);
+    try {
+      const response = await this.fetchRequest(this.request);
+      if (response.errors) {
+        throw new Error(response.errors);
+      }
+      this.setObstruction(false);
+    } catch (e) {
+      this.setObstruction(true);
+      this.logger(e);
+    }
+    this.setCurrentDoorState(states.OPEN);
     
     clearTimeout(this.closingTimer);
     clearTimeout(this.closedTimer);
     
     this.closingTimer = setTimeout(() => {
-      this.currentDoorState = Characteristic.CurrentDoorState.CLOSING;
+      this.setTargetDoorState(Characteristic.TargetDoorState.CLOSED)
+      this.setCurrentDoorState(states.CLOSING);
     }, this.simulateTimeOpen * 1000);
     
     this.closedTimer = setTimeout(() => {
-      this.currentDoorState = Characteristic.CurrentDoorState.CLOSED;
+      this.setCurrentDoorState(states.CLOSED);
     }, (this.simulateTimeOpen + this.simulateTimeClosing) * 1000);
   }
 
   async fetchRequest(request) {
     if (typeof request.options?.body === 'object') {
       request.options.body = JSON.stringify(request.options.body);
-      request.headers = {...(request.headers || {}), 'Content-Type': 'application/json'};
+      request.options.headers = {...(request.options.headers || {}), 'Content-Type': 'application/json'};
     }
-    await fetch(request.url, request.options);
+    
+    this.log(request.url, request.options);
+    
+    const response = await fetch(request.url, request.options);
+    const json = await response.json();
+    
+    this.log(json);
+    return json;
   }
   
 }
