@@ -18,8 +18,9 @@ class HttpGarageDoorsAccessory {
     const {
       debug,
       request,
-      simulateTimeOpen,
-      simulateTimeClosing,
+      simulateTimeOpening = 0,
+      simulateTimeOpen = 0,
+      simulateTimeClosing = 0,
       device = {}
     } = config;
 
@@ -33,6 +34,7 @@ class HttpGarageDoorsAccessory {
 
     this.request = request;
     
+    this.simulateTimeOpening = simulateTimeOpening;
     this.simulateTimeOpen = simulateTimeOpen;
     this.simulateTimeClosing = simulateTimeClosing;
 
@@ -49,6 +51,7 @@ class HttpGarageDoorsAccessory {
     this.currentDoorState = Characteristic.CurrentDoorState.CLOSED;
     this.obscrution = false;
     
+    this.openTimer = undefined;
     this.closingTimer = undefined;
     this.closedTimer = undefined;
   }
@@ -114,19 +117,23 @@ class HttpGarageDoorsAccessory {
       this.setObstruction(true);
       this.logger(e);
     }
-    this.setCurrentDoorState(states.OPEN);
     
+    clearTimeout(this.openTimer);
     clearTimeout(this.closingTimer);
     clearTimeout(this.closedTimer);
+    
+    this.openTimer = setTimeout(() => {
+      this.setCurrentDoorState(states.OPEN);
+    }, this.simulateTimeOpening * 1000);
     
     this.closingTimer = setTimeout(() => {
       this.setTargetDoorState(Characteristic.TargetDoorState.CLOSED)
       this.setCurrentDoorState(states.CLOSING);
-    }, this.simulateTimeOpen * 1000);
+    }, (this.simulateTimeOpening + this.simulateTimeOpen) * 1000);
     
     this.closedTimer = setTimeout(() => {
       this.setCurrentDoorState(states.CLOSED);
-    }, (this.simulateTimeOpen + this.simulateTimeClosing) * 1000);
+    }, (this.simulateTimeOpening + this.simulateTimeOpen + this.simulateTimeClosing) * 1000);
   }
 
   async fetchRequest(request) {
