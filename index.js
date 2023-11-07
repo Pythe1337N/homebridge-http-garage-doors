@@ -122,8 +122,9 @@ class HttpGarageDoorsAccessory {
         this.setTargetDoorState(Characteristic.TargetDoorState.CLOSED);
         this.setCurrentDoorState(states.CLOSED);
         this.setObstruction(false);
-      }, 5000)
+      }, 5000);
       this.logger(e);
+      return;
     }
     
     clearTimeout(this.openTimer);
