@@ -54,6 +54,7 @@ class HttpGarageDoorsAccessory {
     this.openTimer = undefined;
     this.closingTimer = undefined;
     this.closedTimer = undefined;
+    this.obscrutionTimer = undefined;
   }
 
   getServices () {
@@ -105,6 +106,8 @@ class HttpGarageDoorsAccessory {
   }
   
   async open() {
+    clearTimeout(this.obscrutionTimer);
+    
     const states = Characteristic.CurrentDoorState;
     this.setCurrentDoorState(states.OPENING);
     try {
@@ -115,6 +118,11 @@ class HttpGarageDoorsAccessory {
       this.setObstruction(false);
     } catch (e) {
       this.setObstruction(true);
+      this.obscrutionTimer = setTimeout(() => {
+        this.setTargetDoorState(Characteristic.TargetDoorState.CLOSED);
+        this.setCurrentDoorState(states.CLOSED);
+        this.setObstruction(false);
+      }, 5000)
       this.logger(e);
     }
     
